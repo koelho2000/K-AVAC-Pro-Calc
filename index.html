@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="pt-PT" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora e Simulador de Condutas AVAC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                },
+            }
+        }
+    </script>
+    <style>
+        body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        .tab-button.active { background-color: #2563eb; color: white; border-bottom-color: transparent; }
+        .component-item { cursor: grab; transition: transform 0.2s, box-shadow 0.2s; }
+        .component-item:active { cursor: grabbing; transform: scale(1.05); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+        .drawing-area {
+            background-image: linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            cursor: grab;
+        }
+        .drawing-area:active {
+            cursor: grabbing;
+        }
+        .dark .drawing-area {
+             background-image: linear-gradient(rgba(255,255,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px);
+        }
+        #drawing-canvas .component, #drawing-canvas .connection-duct { cursor: move; }
+        #drawing-canvas .component.selected path, 
+        #drawing-canvas .component.selected rect,
+        #drawing-canvas .connection-duct.selected {
+            stroke: #f59e0b;
+            stroke-width: 2;
+        }
+        .shape-selector input:checked + label {
+            background-color: #2563eb;
+            color: white;
+        }
+        .analysis-btn.active {
+            background-color: #1d4ed8; /* darker blue */
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+        }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-200 font-sans transition-colors duration-300">
+
+    <!-- Splash Screen -->
+    <div id="splash-screen" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-900 text-white transition-opacity duration-500">
+        <div class="text-center">
+            <h1 class="text-5xl md:text-7xl font-bold text-blue-400">AVAC Pro Calc</h1>
+            <p class="text-gray-400 mt-2">Versão 1.1.0 - 17 de Outubro de 2025</p>
+            <p class="text-gray-500 mt-8">By Koelho2000</p>
+            <button id="enter-app-btn" class="mt-12 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition-colors text-lg">
+                Avançar
+            </button>
+        </div>
+    </div>
+
+    <!-- Main App Container (initially hidden) -->
+    <div id="main-app" class="hidden">
+        <div class="container mx-auto p-4 md:p-8">
+            <header class="flex justify-between items-center mb-6">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-bold text-blue-600 dark:text-blue-400">AVAC Pro Calc</h1>
+                    <p class="text-gray-600 dark:text-gray-400 mt-1">Calculadora e Simulador de Condutas de AVAC</p>
+                </div>
+                <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                    <svg id="theme-icon-light" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <svg id="theme-icon-dark" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                </button>
+            </header>
+
+            <div class="mb-6">
+                <div class="flex border-b border-gray-300 dark:border-gray-700">
+                    <button data-tab="calculator" class="tab-button py-2 px-6 font-semibold active">1. Seleção de Condutas</button>
+                    <button data-tab="simulator" class="tab-button py-2 px-6 font-semibold">2. Perda de Carga na Rede</button>
+                </div>
+            </div>
+
+            <main>
+                <div id="calculator-tab" class="tab-content">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                         <!-- Painel de Controlo da Calculadora -->
+                        <div class="bg-gray-100 dark:bg-gray-800 p-6 rounded-xl shadow-md">
+                            <h2 class="text-2xl font-bold mb-6">Parâmetros de Entrada</h2>
+                            
+                            <div class="mb-6">
+                                <label for="flowRate" class="block font-semibold mb-2">Caudal (m³/h)</label>
+                                <input type="number" id="flowRate" value="1000" class="w-full p-2 rounded-md bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
+                            </div>
+
+                            <div class="mb-6">
+                                <label class="block font-semibold mb-2">Tipo de Conduta</label>
+                                <div class="flex gap-4">
+                                    <label class="flex items-center p-3 rounded-lg bg-white dark:bg-gray-700 flex-1 cursor-pointer"><input type="radio" name="ductType" value="circular" class="mr-2" checked> 🔵 Circular</label>
+                                    <label class="flex items-center p-3 rounded-lg bg-white dark:bg-gray-700 flex-1 cursor-pointer"><input type="radio" name="ductType" value="rectangular" class="mr-2"> 🟩 Retangular</label>
+                                </div>
+                            </div>
+                            
+                            <div id="dimensions-group"></div>
+
+                            <div class="mt-6">
+                                <label for="roughness" class="block font-semibold mb-2">Material da Conduta (Rugosidade)</label>
+                                <select id="roughness" class="w-full p-2 rounded-md bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
+                                    <option value="0.000045">Aço Galvanizado (novo)</option>
+                                    <option value="0.0015">Conduta Flexível (alumínio)</option>
+                                    <option value="0.0009">Betão</option>
+                                </select>
+                            </div>
+                            <div class="mt-6">
+                                <label for="spaceType" class="block font-semibold mb-2">Tipo de Espaço (Critério de Ruído)</label>
+                                <select id="spaceType" class="w-full p-2 rounded-md bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
+                                    <option value="25">Estúdios de Gravação/TV (~25 dBA)</option>
+                                    <option value="30">Salas de Concerto / Teatros (~30 dBA)</option>
+                                    <option value="35" selected>Quartos / Hospitais (~35 dBA)</option>
+                                    <option value="40">Escritórios / Bibliotecas (~40 dBA)</option>
+                                    <option value="45">Restaurantes / Lojas (~45 dBA)</option>
+                                    <option value="50">Ginásios / Cozinhas Industriais (~50 dBA)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <!-- Painel de Resultados da Calculadora -->
+                        <div class="bg-gray-100 dark:bg-gray-800 p-6 rounded-xl shadow-md">
+                            <h2 class="text-2xl font-bold mb-6">Resultados</h2>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-lg">
+                                <div id="velocity-card" class="bg-white dark:bg-gray-700 p-4 rounded-lg flex justify-between items-center">
+                                    <div>
+                                        <div class="font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                                            Velocidade do Ar
+                                            <span class="alert-icon hidden text-yellow-500" title="Valor fora do recomendado">
+                                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                                            </span>
+                                        </div>
+                                        <small class="text-gray-400 dark:text-gray-500">Recom.: 2.5-7.5 m/s</small>
+                                    </div>
+                                    <div class="value-container text-2xl font-bold text-blue-600 dark:text-blue-400"><span id="velocity-result">---</span> m/s</div>
+                                </div>
+                                <div id="pressure-card" class="bg-white dark:bg-gray-700 p-4 rounded-lg flex justify-between items-center">
+                                    <div>
+                                        <div class="font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                                            Perda de Carga
+                                            <span class="alert-icon hidden text-yellow-500" title="Valor fora do recomendado">
+                                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                                            </span>
+                                        </div>
+                                        <small class="text-gray-400 dark:text-gray-500">Recom.: &lt; 1.2 Pa/m</small>
+                                    </div>
+                                    <div class="value-container text-2xl font-bold text-blue-600 dark:text-blue-400"><span id="pressure-result">---</span> Pa/m</div>
+                                </div>
+                                <div class="bg-white dark:bg-gray-700 p-4 rounded-lg">
+                                    <div class="font-semibold text-gray-500 dark:text-gray-400">Diâmetro (Equiv.)</div>
+                                    <div class="text-2xl font-bold text-blue-600 dark:text-blue-400"><span id="diameter-result">---</span> mm</div>
+                                </div>
+                                <div class="bg-white dark:bg-gray-700 p-4 rounded-lg">
+                                    <div class="font-semibold text-gray-500 dark:text-gray-400">Área de Secção</div>
+                                    <div class="text-2xl font-bold text-blue-600 dark:text-blue-400"><span id="area-result">---</span> m²</div>
+                                </div>
+                                <div class="bg-white dark:bg-gray-700 p-4 rounded-lg">
+                                    <div class="font-semibold text-gray-500 dark:text-gray-400">Nº de Reynolds</div>
+                                    <div class="text-2xl font-bold text-blue-600 dark:text-blue-400"><span id="reynolds-result">---</span></div>
+                                </div>
+                                <div id="noise-card" class="bg-white dark:bg-gray-700 p-4 rounded-lg flex justify-between items-center">
+                                    <div>
+                                        <div class="font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                                            Ruído Estimado
+                                            <span class="alert-icon hidden text-yellow-500" title="Valor fora do recomendado">
+                                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                                            </span>
+                                        </div>
+                                        <small id="noise-recommendation" class="text-gray-400 dark:text-gray-500">Recom.: &lt; 35 dBA</small>
+                                    </div>
+                                    <div class="value-container text-2xl font-bold text-blue-600 dark:text-blue-400"><span id="noise-result">---</span> dBA</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="simulator-tab" class="tab-content hidden">
+                     <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                        <!-- Biblioteca de Componentes -->
+                        <div class="lg:col-span-1 bg-gray-100 dark:bg-gray-800 p-6 rounded-xl shadow-md">
+                            <h2 class="text-2xl font-bold mb-6">Componentes</h2>
+                            <div class="space-y-3">
+                                <div class="component-item flex items-center bg-white dark:bg-gray-700 p-3 rounded-lg" draggable="true" data-type="curve90"><svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10h11v11"></path></svg>Curva 90°</div>
+                                 <div class="component-item flex items-center bg-white dark:bg-gray-700 p-3 rounded-lg" draggable="true" data-type="tee"><svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>Derivação T</div>
+                                <div class="component-item flex items-center bg-white dark:bg-gray-700 p-3 rounded-lg" draggable="true" data-type="reducer"><svg class="w-6 h-6 mr-3 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg>Redução</div>
+                                <div class="component-item flex items-center bg-white dark:bg-gray-700 p-3 rounded-lg" draggable="true" data-type="grille"><svg class="w-6 h-6 mr-3 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg>Grelha</div>
+                                <div class="component-item flex items-center bg-white dark:bg-gray-700 p-3 rounded-lg" draggable="true" data-type="fan"><svg class="w-6 h-6 mr-3 text-green-500" fill="currentColor" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg>Ventilador</div>
+                            </div>
+                        </div>
+                        <!-- Área de Desenho -->
+                        <div class="lg:col-span-3 bg-gray-100 dark:bg-gray-800 p-6 rounded-xl shadow-md">
+                            <div class="flex justify-between items-center mb-4">
+                                 <h2 class="text-2xl font-bold">Desenho da Rede</h2>
+                                 <div class="flex items-center gap-2">
+                                    <button id="zoom-in-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded-lg transition-colors text-lg">+</button>
+                                    <button id="zoom-out-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded-lg transition-colors text-lg">-</button>
+                                    <div class="relative inline-block text-left">
+                                        <div>
+                                            <button type="button" id="templates-menu-button" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                                                Templates
+                                            </button>
+                                        </div>
+                                        <div id="templates-dropdown" class="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-700 ring-1 ring-black ring-opacity-5 focus:outline-none hidden z-10" role="menu">
+                                            <div class="py-1" role="none">
+                                                <a href="#" class="template-item block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" data-template="1">Rede Simples</a>
+                                                <a href="#" class="template-item block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" data-template="2">Rede com Derivação</a>
+                                                <a href="#" class="template-item block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" data-template="3">Rede com Curva</a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button id="show-table-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Tabela</button>
+                                    <button id="simulate-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Simular</button>
+                                    <button id="clear-network-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Limpar</button>
+                                 </div>
+                            </div>
+                            <div id="drawing-area" class="drawing-area w-full h-[32rem] rounded-lg border-2 border-dashed border-gray-400 dark:border-gray-600 relative overflow-hidden">
+                               <svg id="drawing-canvas" width="100%" height="100%"><g id="network-group"></g></svg>
+                               <div id="analysis-legend" class="absolute top-2 right-2 bg-white/80 dark:bg-gray-800/80 p-3 rounded-md shadow-lg text-sm hidden">
+                                    <h4 id="legend-title" class="font-bold mb-2 text-center">Legenda</h4>
+                                    <div class="w-full h-4 rounded-md bg-gradient-to-r from-green-500 via-yellow-500 to-red-500"></div>
+                                    <div class="flex justify-between text-xs mt-1">
+                                        <span id="legend-min">0</span>
+                                        <span id="legend-mid">5</span>
+                                        <span id="legend-max">10</span>
+                                    </div>
+                                </div>
+                            </div>
+                             <div class="mt-6 flex flex-wrap items-start gap-6">
+                                <div>
+                                    <div class="text-lg font-semibold">Perda de Carga Total (ΔP)</div>
+                                    <div id="total-pressure-drop-result" class="text-2xl font-bold text-blue-600 dark:text-blue-400">--- Pa</div>
+                                </div>
+                                <div>
+                                    <div class="text-lg font-semibold">Caudal Total do Sistema</div>
+                                    <div id="total-flow-rate-result" class="text-2xl font-bold text-blue-600 dark:text-blue-400">--- m³/h</div>
+                                </div>
+                                <div id="simulation-validation-result" class="text-lg font-semibold mt-1"></div>
+                             </div>
+                             <div id="analysis-view-panel" class="mt-4 p-4 bg-gray-200 dark:bg-gray-700 rounded-lg hidden">
+                                <h3 class="font-semibold mb-2 text-center text-gray-800 dark:text-gray-200">Vista de Análise</h3>
+                                <div class="flex justify-around gap-2">
+                                    <button data-mode="normal" class="analysis-btn flex-1 px-3 py-1 text-sm rounded-md bg-gray-500 text-white transition-colors">Normal</button>
+                                    <button data-mode="velocity" class="analysis-btn flex-1 px-3 py-1 text-sm rounded-md bg-blue-500 text-white transition-colors">Velocidade</button>
+                                    <button data-mode="pressure" class="analysis-btn flex-1 px-3 py-1 text-sm rounded-md bg-blue-500 text-white transition-colors">Perda de Carga</button>
+                                    <button data-mode="noise" class="analysis-btn flex-1 px-3 py-1 text-sm rounded-md bg-blue-500 text-white transition-colors">Ruído</button>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Painel de Propriedades -->
+                        <div id="properties-panel" class="lg:col-span-1 bg-gray-100 dark:bg-gray-800 p-6 rounded-xl shadow-md">
+                            <h2 class="text-2xl font-bold mb-6">Propriedades</h2>
+                            <div id="properties-content" class="text-gray-500 dark:text-gray-400">Selecione um componente para ver as suas propriedades.</div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modal da Tabela de Resultados -->
+    <div id="results-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-7xl transform transition-all">
+            <div class="flex justify-between items-center mb-4 border-b pb-2 border-gray-300 dark:border-gray-600">
+                <h2 class="text-2xl font-bold">Tabela de Resultados da Rede</h2>
+                <div class="flex items-center gap-4">
+                    <button id="copy-table-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm">Copiar p/ Excel</button>
+                    <button id="print-table-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm">Imprimir</button>
+                    <button id="close-modal-btn" class="text-gray-600 dark:text-gray-300 hover:text-red-500 text-3xl">&times;</button>
+                </div>
+            </div>
+            <div class="overflow-y-auto max-h-[60vh]">
+                <table class="w-full text-left table-auto">
+                    <thead class="sticky top-0 bg-gray-200 dark:bg-gray-700">
+                        <tr>
+                            <th class="p-3">Componente / Ligação</th>
+                            <th class="p-3">Caudal (m³/h)</th>
+                            <th class="p-3">Velocidade (m/s)</th>
+                            <th class="p-3">Dimensão (mm)</th>
+                            <th class="p-3">Compr. (m)</th>
+                            <th class="p-3">Perda Específica (Pa/m)</th>
+                            <th class="p-3">Ruído (dBA)</th>
+                            <th class="p-3">Coef. Atrito (f)</th>
+                            <th class="p-3">Coef. Perda (K)</th>
+                            <th class="p-3">Perda de Carga (Pa)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-table-body">
+                        <!-- As linhas da tabela serão inseridas aqui via JavaScript -->
+                    </tbody>
+                    <tfoot id="results-table-foot" class="sticky bottom-0 bg-gray-200 dark:bg-gray-700 font-bold">
+                        <!-- O total será inserido aqui via JavaScript -->
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Alerta Genérico -->
+    <div id="alert-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md transform transition-all text-center">
+            <h3 id="alert-title" class="text-xl font-bold mb-4 text-red-500">Erro na Simulação</h3>
+            <p id="alert-message" class="mb-6">Mensagem de erro aqui.</p>
+            <button id="close-alert-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-colors">OK</button>
+        </div>
+    </div>
+
+    <!-- Modal de Confirmação -->
+    <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md transform transition-all text-center">
+            <h3 id="confirm-title" class="text-xl font-bold mb-4">Atenção</h3>
+            <p id="confirm-message" class="mb-6">Mensagem de confirmação aqui.</p>
+            <div class="flex justify-center gap-4">
+                 <button id="confirm-cancel-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-lg transition-colors">Cancelar</button>
+                 <button id="confirm-ok-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-colors">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            // --- SPLASH SCREEN LOGIC ---
+            const splashScreen = document.getElementById('splash-screen');
+            const mainApp = document.getElementById('main-app');
+            const enterAppBtn = document.getElementById('enter-app-btn');
+
+            enterAppBtn.addEventListener('click', () => {
+                splashScreen.style.opacity = '0';
+                setTimeout(() => {
+                    splashScreen.classList.add('hidden');
+                    mainApp.classList.remove('hidden');
+                }, 500); // Match the transition duration
+            });
+
+
+            // --- CONSTANTES ---
+            const RHO = 1.204, NU = 1.516e-5, GRID_SIZE = 20;
+            const SMACNA_DIAMETERS_MM = [100, 125, 150, 180, 200, 224, 250, 280, 300, 315, 355, 400, 450, 500, 560, 630, 710, 800, 900, 1000, 1250];
+
+            // --- GESTÃO DO TEMA E ABAS ---
+            const themeToggle = document.getElementById('theme-toggle');
+            const lightIcon = document.getElementById('theme-icon-light');
+            const darkIcon = document.getElementById('theme-icon-dark');
+            const applyTheme = (theme) => {
+                const isDark = theme === 'dark';
+                document.documentElement.classList.toggle('dark', isDark);
+                document.documentElement.classList.toggle('light', !isDark);
+                lightIcon.classList.toggle('hidden', !isDark);
+                darkIcon.classList.toggle('hidden', isDark);
+            };
+            const preferredTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            applyTheme(preferredTheme);
+            themeToggle.addEventListener('click', () => {
+                const newTheme = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+                localStorage.setItem('theme', newTheme);
+                applyTheme(newTheme);
+            });
+            const tabButtons = document.querySelectorAll('.tab-button');
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabButtons.forEach(button => button.addEventListener('click', () => {
+                const tabId = button.dataset.tab;
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                tabContents.forEach(content => content.classList.toggle('hidden', content.id !== `${tabId}-tab`));
+            }));
+
+            // --- LÓGICA DA CALCULADORA ---
+            const inputs = { ductType: document.querySelectorAll('input[name="ductType"]'), flowRate: document.getElementById('flowRate'), roughness: document.getElementById('roughness'), dimensionsGroup: document.getElementById('dimensions-group'), spaceType: document.getElementById('spaceType') };
+            const outputs = { velocity: document.getElementById('velocity-result'), pressure: document.getElementById('pressure-result'), diameter: document.getElementById('diameter-result'), area: document.getElementById('area-result'), reynolds: document.getElementById('reynolds-result'), noise: document.getElementById('noise-result'), noiseRecommendation: document.getElementById('noise-recommendation') };
+            
+            const updateInputsUI = () => {
+                const ductType = document.querySelector('input[name="ductType"]:checked').value;
+                let dimensionsHTML = '';
+                if (ductType === 'rectangular') {
+                     dimensionsHTML = `<div class="mt-4"><div class="grid grid-cols-2 gap-4"><div><label for="widthInput" class="block font-semibold mb-2">Largura (mm)</label><input type="number" id="widthInput" value="300" class="w-full p-2 rounded-md bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none"></div><div><label for="heightInput" class="block font-semibold mb-2">Altura (mm)</label><input type="number" id="heightInput" value="200" class="w-full p-2 rounded-md bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none"></div></div></div>`;
+                } else { // circular
+                    const options = SMACNA_DIAMETERS_MM.map(d => `<option value="${d}" ${d===250 ? 'selected' : ''}>${d} mm</option>`).join('');
+                    dimensionsHTML = `<div class="mt-4"><label for="diameterInput" class="block font-semibold mb-2">Diâmetro Nominal (SMACNA)</label><select id="diameterInput" class="w-full p-2 rounded-md bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">${options}</select></div>`;
+                }
+                inputs.dimensionsGroup.innerHTML = dimensionsHTML;
+                inputs.dimensionsGroup.querySelectorAll('input, select').forEach(el => el.addEventListener('input', calculate));
+                calculate();
+            };
+
+            const calculate = () => {
+                try {
+                    const ductType = document.querySelector('input[name="ductType"]:checked').value;
+                    const roughness = parseFloat(inputs.roughness.value);
+                    const noiseLimit = parseFloat(inputs.spaceType.value);
+                    let Q_m3s, pressureDrop_Pa_m, D_m, width_m, height_m, Deq_m, A_m2, V_ms, Re, f, noise;
+                    const Q_m3h = parseFloat(inputs.flowRate.value);
+                    if (isNaN(Q_m3h) || Q_m3h <= 0) throw new Error("Caudal inválido");
+                    Q_m3s = Q_m3h / 3600;
+                    if (ductType === 'circular') {
+                        D_m = parseFloat(document.getElementById('diameterInput').value) / 1000;
+                        if (isNaN(D_m) || D_m <= 0) throw new Error("Diâmetro inválido");
+                        Deq_m = D_m; A_m2 = Math.PI * (D_m / 2) ** 2;
+                    } else {
+                        width_m = parseFloat(document.getElementById('widthInput').value) / 1000;
+                        height_m = parseFloat(document.getElementById('heightInput').value) / 1000;
+                        if (isNaN(width_m) || isNaN(height_m) || width_m <= 0 || height_m <= 0) throw new Error("Dimensões inválidas");
+                        A_m2 = width_m * height_m;
+                        Deq_m = 1.30 * Math.pow((width_m * height_m), 0.625) / Math.pow((width_m + height_m), 0.25);
+                    }
+                    V_ms = Q_m3s / A_m2; Re = (V_ms * Deq_m) / NU; f = haaland(roughness, Deq_m, Re);
+                    pressureDrop_Pa_m = f * (RHO / 2) * (V_ms ** 2 / Deq_m);
+                    noise = 10 + 50 * Math.log10(V_ms); if (noise < 20) noise = 20;
+                    updateResults({ velocity: V_ms, pressure: pressureDrop_Pa_m, diameter: Deq_m * 1000, area: A_m2, reynolds: Re, noise: noise, noiseLimit: noiseLimit });
+                } catch (error) { resetResults(); }
+            };
+
+            const haaland = (k, D, Re) => { if (Re < 2300) return 64 / Re; const t1 = Math.pow((k / (3.7 * D)), 1.11); const t2 = 6.9 / Re; return Math.pow(-1.8 * Math.log10(t1 + t2), -2); };
+            
+            const updateResults = (res) => {
+                Object.keys(outputs).forEach(k => {
+                    const el = outputs[k]; if (!el) return;
+                    let v;
+                    if (k === 'noiseRecommendation') {
+                        el.textContent = `Recom.: < ${res.noiseLimit} dBA`;
+                        return;
+                    }
+                    switch(k) {
+                        case 'velocity': case 'pressure': case 'noise': v = res[k].toFixed(2); break;
+                        case 'area': v = res[k].toFixed(4); break;
+                        case 'reynolds': v = res[k].toExponential(2); break;
+                        default: v = res[k].toFixed(0);
+                    }
+                    el.textContent = v;
+                });
+                
+                const recommendations = { velocity: { min: 2.5, max: 7.5 }, pressure: { max: 1.2 }, noise: { max: res.noiseLimit } };
+                const checkAndAlert = (cardId, value, { min = -Infinity, max = Infinity }) => {
+                    const card = document.getElementById(cardId); if (!card) return;
+                    const valueContainer = card.querySelector('.value-container'), alertIcon = card.querySelector('.alert-icon');
+                    if (!valueContainer || !alertIcon) return;
+                    const isOutOfRange = value < min || value > max;
+                    valueContainer.classList.toggle('text-blue-600', !isOutOfRange); valueContainer.classList.toggle('dark:text-blue-400', !isOutOfRange);
+                    valueContainer.classList.toggle('text-yellow-600', isOutOfRange); valueContainer.classList.toggle('dark:text-yellow-400', isOutOfRange);
+                    alertIcon.classList.toggle('hidden', !isOutOfRange);
+                };
+                checkAndAlert('velocity-card', res.velocity, recommendations.velocity); checkAndAlert('pressure-card', res.pressure, recommendations.pressure); checkAndAlert('noise-card', res.noise, recommendations.noise);
+            };
+
+            const resetResults = () => {
+                Object.values(outputs).forEach(el => {
+                    if (el.id !== 'noise-recommendation') {
+                        el.textContent = '---';
+                    }
+                });
+                const noiseLimit = parseFloat(inputs.spaceType.value);
+                outputs.noiseRecommendation.textContent = `Recom.: < ${noiseLimit} dBA`;
+                checkAndAlert('velocity-card', 0, {min: 2.5, max: 7.5}); checkAndAlert('pressure-card', 0, {max: 1.2}); checkAndAlert('noise-card', 0, {max: noiseLimit});
+            };
+            
+            Object.values(inputs).forEach(el => { 
+                if (el instanceof NodeList) el.forEach(i => i.addEventListener('change', updateInputsUI)); 
+                else if (el instanceof HTMLElement && el.id !== 'dimensions-group') el.addEventListener((el.tagName === 'SELECT' ? 'change' : 'input'), calculate);
+            });
+            updateInputsUI();
+            
+            // --- LÓGICA DO SIMULADOR DE REDE ---
+            const componentItems = document.querySelectorAll('.component-item'), drawingArea = document.getElementById('drawing-area'), canvas = document.getElementById('drawing-canvas'), networkGroup = document.getElementById('network-group'), zoomInBtn = document.getElementById('zoom-in-btn'), zoomOutBtn = document.getElementById('zoom-out-btn'), simulateBtn = document.getElementById('simulate-btn'), clearNetworkBtn = document.getElementById('clear-network-btn'), propertiesPanel = document.getElementById('properties-panel'), propertiesContent = document.getElementById('properties-content'), totalPressureDropResult = document.getElementById('total-pressure-drop-result'), totalFlowRateResult = document.getElementById('total-flow-rate-result'), simulationValidationResult = document.getElementById('simulation-validation-result'), analysisViewPanel = document.getElementById('analysis-view-panel'), analysisLegend = document.getElementById('analysis-legend');
+            
+            let network = [], connections = [], selectedComponentId = null, selectedConnectionId = null, latestConnectionDrops = [];
+            let dragInfo = { element: null, group: [], offset: { x: 0, y: 0 } }, viewTransform = { scale: 1, tx: 0, ty: 0 }, isPanning = false, panStart = { x: 0, y: 0 };
+            const svgPoint = canvas.createSVGPoint();
+            const getMousePosition = (evt) => { svgPoint.x = evt.clientX; svgPoint.y = evt.clientY; return svgPoint.matrixTransform(networkGroup.getScreenCTM().inverse()); };
+            
+            const COMPONENT_DEFS = {
+                curve90:  { connectors: [{x:0.5,y:1},{x:1,y:0.5}], draw: (w,h) => `<path d="M ${w/2},${h} L ${w/2},${h/2} L ${w},${h/2}" fill="none" stroke="rgba(100,100,150,0.7)" stroke-width="8"/>` },
+                tee:      { connectors: [{x:0,y:0.5},{x:1,y:0.5},{x:0.5,y:1}], draw: (w,h) => `<rect x="0" y="${h/2 - 4}" width="${w}" height="8" fill="rgba(100,100,150,0.7)"/><rect x="${w/2 - 4}" y="${h/2}" width="8" height="${h/2}" fill="rgba(100,100,150,0.7)"/>` },
+                reducer:  { connectors: [{x:0,y:0.5},{x:1,y:0.5}], draw: (w,h) => `<rect x="0" y="0" width="${w}" height="${h}" fill="rgba(59, 130, 246, 0.8)"/>` },
+                grille:   { connectors: [{x:0.5,y:0}], draw: (w,h) => `<rect x="0" y="0" width="${w}" height="${h}" fill="rgba(239, 68, 68, 0.8)"/>` },
+                fan:      { connectors: [{x:0,y:0.5},{x:1,y:0.5}], draw: (w,h) => `<rect x="0" y="0" width="${w}" height="${h}" fill="rgba(34, 197, 94, 0.8)"/>` }
+            };
+            const ZETA_VALUES = { curve90: 0.9, tee: 1.8, reducer: 0.15 };
+
+            const updateViewTransform = () => networkGroup.setAttribute('transform', `translate(${viewTransform.tx}, ${viewTransform.ty}) scale(${viewTransform.scale})`);
+            
+            const getConnectorWorldPositions = (component) => {
+                const def = COMPONENT_DEFS[component.type];
+                if (!def || !def.connectors) return [];
+                const w = GRID_SIZE, h = GRID_SIZE, angleRad = component.rotation * Math.PI / 180, cosA = Math.cos(angleRad), sinA = Math.sin(angleRad), centerX = w / 2, centerY = h / 2;
+                return def.connectors.map(conn => {
+                    const localX = conn.x * w - centerX, localY = conn.y * h - centerY;
+                    const rotatedX = localX * cosA - localY * sinA, rotatedY = localX * sinA + localY * cosA;
+                    return { x: component.x + centerX + rotatedX, y: component.y + centerY + rotatedY };
+                });
+            };
+
+            const renderNetwork = () => {
+                networkGroup.innerHTML = '<g id="connections-group"></g><g id="components-group"></g><g id="labels-group"></g>';
+                const connectionsGroup = networkGroup.querySelector('#connections-group');
+                const componentsGroup = networkGroup.querySelector('#components-group');
+
+                connections.forEach(conn => {
+                    const compA = network.find(c => c.id === conn.compA);
+                    const compB = network.find(c => c.id === conn.compB);
+                    if (!compA || !compB) return;
+                    const portsA = getConnectorWorldPositions(compA), portsB = getConnectorWorldPositions(compB);
+                    const startPos = portsA[conn.portA], endPos = portsB[conn.portB];
+                    if (!startPos || !endPos) return;
+
+                    const dx = endPos.x - startPos.x, dy = endPos.y - startPos.y;
+                    const length = Math.hypot(dx, dy), angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+                    const ductRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    ductRect.setAttribute('x', 0); ductRect.setAttribute('y', -4);
+                    ductRect.setAttribute('width', length); ductRect.setAttribute('height', 8);
+                    ductRect.setAttribute('fill', 'rgba(100,100,150,0.7)');
+                    ductRect.dataset.id = conn.id;
+                    ductRect.setAttribute('class', `connection-duct ${conn.id === selectedConnectionId ? 'selected' : ''}`);
+                    ductRect.setAttribute('transform', `translate(${startPos.x}, ${startPos.y}) rotate(${angle})`);
+                    connectionsGroup.appendChild(ductRect);
+                });
+
+                const allConnectedPorts = new Set();
+                connections.forEach(c => { allConnectedPorts.add(`${c.compA}-${c.portA}`); allConnectedPorts.add(`${c.compB}-${c.portB}`); });
+                
+                network.forEach(comp => {
+                    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                    group.setAttribute('class', `component ${comp.id === selectedComponentId ? 'selected' : ''}`);
+                    group.dataset.id = comp.id;
+                    const w = GRID_SIZE, h = GRID_SIZE;
+                    group.setAttribute('transform', `translate(${comp.x}, ${comp.y}) rotate(${comp.rotation}, ${w/2}, ${h/2})`);
+                    const def = COMPONENT_DEFS[comp.type];
+                    const shapeHTML = def ? def.draw(w, h) : '';
+                    let connectionPointsHTML = '';
+                    if (def && def.connectors) {
+                        def.connectors.forEach((conn, index) => {
+                            const color = allConnectedPorts.has(`${comp.id}-${index}`) ? '#16a34a' : '#0ea5e9';
+                            connectionPointsHTML += `<circle cx="${conn.x * w}" cy="${conn.y * h}" r="${3 / viewTransform.scale}" fill="${color}" style="stroke-width: ${1 / viewTransform.scale}px; stroke: black;"/>`;
+                        });
+                    }
+                    group.innerHTML = shapeHTML + connectionPointsHTML;
+                    componentsGroup.appendChild(group);
+                });
+            };
+            
+            const deleteSelection = () => {
+                if (selectedComponentId) {
+                    network = network.filter(c => c.id !== selectedComponentId);
+                    connections = connections.filter(c => c.compA !== selectedComponentId && c.compB !== selectedComponentId);
+                    selectedComponentId = null;
+                } else if (selectedConnectionId) {
+                    connections = connections.filter(c => c.id !== selectedConnectionId);
+                    selectedConnectionId = null;
+                }
+                renderNetwork();
+                showProperties(null);
+            };
+
+            const showProperties = (type, id) => {
+                let contentHTML = '<div class="text-gray-500 dark:text-gray-400">Selecione um item para ver as suas propriedades.</div>';
+                const addProp = (label, prop, unit, value) => `<div class="mb-3"><label class="block text-sm font-medium text-gray-400">${label}</label><div class="flex items-center"><input type="number" data-prop="${prop}" value="${value}" class="w-full mt-1 p-1 rounded-md bg-gray-700 border-gray-600 text-white"> <span class="ml-2 text-gray-400">${unit}</span></div></div>`;
+
+                if (type === 'component') {
+                    const component = network.find(c => c.id === id);
+                    if (component) {
+                        contentHTML = `<h3 class="font-bold text-lg mb-4 capitalize text-white">${component.type.replace('-', ' ')}</h3>`;
+                        const addResult = (label, value, unit) => `<div class="mb-2"><span class="text-sm font-medium text-gray-400">${label}:</span><span class="ml-2 font-semibold text-gray-800 dark:text-white">${value} ${unit}</span></div>`;
+                        
+                        if(component.type==='reducer'){contentHTML+=addProp('Dimensão Entrada','width','mm',component.width);contentHTML+=addProp('Dimensão Saída','height','mm',component.height);}
+                        else if(component.type==='fan'){contentHTML+=addProp('Pressão Estática','pressure','Pa',component.pressure);}
+                        else if(component.type==='grille'){contentHTML+=addProp('Caudal','flowUser','m³/h',component.flowUser); contentHTML+=addProp('Perda de Carga','pressureDropUser','Pa',component.pressureDropUser);}
+                        else{contentHTML+=addProp('Dimensão','width','mm',component.width);}
+                        
+                        if (component.hasOwnProperty('calculatedFlow')) {
+                            contentHTML += `<hr class="my-4 border-gray-600">`;
+                            contentHTML += `<h4 class="font-semibold text-md mb-2 text-gray-300">Resultados da Simulação</h4>`;
+                            contentHTML += addResult('Caudal Calculado', (component.calculatedFlow || 0).toFixed(2), 'm³/h');
+                            contentHTML += addResult('Perda de Carga', (component.pressureDrop || 0).toFixed(2), 'Pa');
+                        }
+                        contentHTML += `<div class="flex gap-2 mt-4"><button id="rotate-component-btn" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Rodar</button><button id="delete-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Apagar</button></div>`;
+                    }
+                } else if (type === 'connection') {
+                    const connection = connections.find(c => c.id === id);
+                    if (connection) {
+                        contentHTML = `<h3 class="font-bold text-lg mb-4 text-white">Conduta de Ligação</h3>`;
+                        contentHTML += addProp('Comprimento', 'length_m', 'm', connection.length_m);
+                        
+                        contentHTML += `<div class="mb-3"><label class="block text-sm font-medium text-gray-400">Forma</label>
+                            <div class="flex gap-2 mt-1 shape-selector">
+                                <input type="radio" name="conn_shape" value="circular" class="hidden" id="conn_shape_circular" ${connection.shape === 'circular' ? 'checked' : ''}>
+                                <label for="conn_shape_circular" class="flex-1 p-2 bg-gray-600 rounded-md text-center cursor-pointer transition-colors">Circular</label>
+                                
+                                <input type="radio" name="conn_shape" value="rectangular" class="hidden" id="conn_shape_rectangular" ${connection.shape === 'rectangular' ? 'checked' : ''}>
+                                <label for="conn_shape_rectangular" class="flex-1 p-2 bg-gray-600 rounded-md text-center cursor-pointer transition-colors">Retangular</label>
+                            </div>
+                        </div>`;
+
+                        if (connection.shape === 'circular') {
+                            contentHTML += addProp('Dimensão', 'diameter_mm', 'mm', connection.diameter_mm);
+                        } else {
+                            contentHTML += addProp('Largura', 'width_mm', 'mm', connection.width_mm);
+                            contentHTML += addProp('Altura', 'height_mm', 'mm', connection.height_mm);
+                        }
+                        
+                        contentHTML += `<div class="flex gap-2 mt-4"><button id="delete-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Apagar</button></div>`;
+                    }
+                }
+                
+                propertiesContent.innerHTML = contentHTML;
+                if (document.getElementById('delete-btn')) {
+                    document.getElementById('delete-btn').addEventListener('click', deleteSelection);
+                }
+                if (document.getElementById('rotate-component-btn')) {
+                    document.getElementById('rotate-component-btn').addEventListener('click', () => {
+                        if (selectedComponentId) {
+                            const comp = network.find(c => c.id === selectedComponentId);
+                            if (comp) { comp.rotation = (comp.rotation + 90) % 360; renderNetwork(); }
+                        }
+                    });
+                }
+                propertiesContent.querySelectorAll('input[name="conn_shape"]').forEach(radio => {
+                    radio.addEventListener('change', (e) => {
+                        const connToUpdate = connections.find(c => c.id === selectedConnectionId);
+                        if (connToUpdate) {
+                            connToUpdate.shape = e.target.value;
+                            showProperties('connection', selectedConnectionId); // Re-render the panel
+                        }
+                    });
+                });
+            };
+            
+            componentItems.forEach(item => item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', item.dataset.type); e.dataTransfer.effectAllowed = 'copy'; }));
+            drawingArea.addEventListener('dragover', e => e.preventDefault());
+            drawingArea.addEventListener('drop', e => {
+                e.preventDefault();
+                const type = e.dataTransfer.getData('text/plain'), pos = getMousePosition(e);
+                const newComp = { id: Date.now(), type, rotation: 0, x: Math.round((pos.x - GRID_SIZE/2) / GRID_SIZE) * GRID_SIZE, y: Math.round((pos.y - GRID_SIZE/2) / GRID_SIZE) * GRID_SIZE, width: 250, height: 250, pressure: 100, flowUser: 500, pressureDropUser: 15 };
+                network.push(newComp);
+                selectedComponentId = newComp.id; selectedConnectionId = null;
+                renderNetwork(); showProperties('component', selectedComponentId);
+            });
+            
+            canvas.addEventListener('mousedown', e => {
+                const componentElement = e.target.closest('.component');
+                const connectionElement = e.target.closest('.connection-duct');
+
+                if (componentElement) {
+                    const componentId = parseInt(componentElement.dataset.id);
+                    selectedComponentId = componentId; selectedConnectionId = null;
+                    const startComp = network.find(c => c.id === componentId);
+                    if (!startComp) return;
+                    const pos = getMousePosition(e);
+                    dragInfo.element = componentElement; 
+                    dragInfo.group = [startComp];
+                    dragInfo.offset.x = startComp.x - pos.x; 
+                    dragInfo.offset.y = startComp.y - pos.y;
+                    renderNetwork(); showProperties('component', componentId);
+                } else if (connectionElement) {
+                    const connectionId = parseFloat(connectionElement.dataset.id);
+                    selectedConnectionId = connectionId; selectedComponentId = null;
+                    renderNetwork(); showProperties('connection', connectionId);
+                } else {
+                    isPanning = true;
+                    panStart.x = e.clientX - viewTransform.tx;
+                    panStart.y = e.clientY - viewTransform.ty;
+                    selectedComponentId = null; selectedConnectionId = null;
+                    renderNetwork(); showProperties(null);
+                }
+            });
+
+            canvas.addEventListener('dblclick', e => {
+                const targetElement = e.target.closest('.component');
+                if (targetElement) {
+                    const componentId = parseInt(targetElement.dataset.id);
+                    connections = connections.filter(c => c.compA !== componentId && c.compB !== componentId);
+                    renderNetwork();
+                }
+            });
+
+            window.addEventListener('mousemove', e => {
+                if (isPanning) {
+                    viewTransform.tx = e.clientX - panStart.x; viewTransform.ty = e.clientY - panStart.y; updateViewTransform();
+                } else if (dragInfo.element && dragInfo.group.length > 0) {
+                    e.preventDefault();
+                    const pos = getMousePosition(e);
+                    const mainComp = dragInfo.group[0];
+                    mainComp.x = pos.x + dragInfo.offset.x; 
+                    mainComp.y = pos.y + dragInfo.offset.y;
+
+                    const SNAP_DISTANCE = 10;
+                    const movingComp = mainComp;
+                    const movingPorts = getConnectorWorldPositions(movingComp);
+                    for (const staticComp of network) { 
+                        if (movingComp.id === staticComp.id) continue;
+                        const staticPorts = getConnectorWorldPositions(staticComp);
+                        for (let i=0; i < movingPorts.length; i++){
+                            for(let j=0; j < staticPorts.length; j++){
+                                const dist = Math.hypot(movingPorts[i].x - staticPorts[j].x, movingPorts[i].y - staticPorts[j].y);
+                                if(dist < SNAP_DISTANCE){
+                                    const snapDeltaX = staticPorts[j].x - movingPorts[i].x, snapDeltaY = staticPorts[j].y - movingPorts[i].y;
+                                    movingComp.x += snapDeltaX; movingComp.y += snapDeltaY;
+                                    const connExists=connections.some(c=>(c.compA===movingComp.id&&c.portA===i&&c.compB===staticComp.id&&c.portB===j)||(c.compA===staticComp.id&&c.portA===j&&c.compB===movingComp.id&&c.portB===i));
+                                    if(!connExists){
+                                        connections.push({
+                                            id: Date.now() + Math.random(), compA:movingComp.id, portA:i, compB:staticComp.id, portB:j, 
+                                            shape: 'circular', diameter_mm: 250, width_mm: 300, height_mm: 200, length_m: 1
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    renderNetwork();
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                isPanning = false;
+                if (dragInfo.element) {
+                    dragInfo.group.forEach(comp => {
+                        comp.x = Math.round(comp.x / GRID_SIZE) * GRID_SIZE;
+                        comp.y = Math.round(comp.y / GRID_SIZE) * GRID_SIZE;
+                    });
+                    renderNetwork();
+                }
+                dragInfo = { element: null, group: [], offset: { x: 0, y: 0 } };
+            });
+            
+            drawingArea.addEventListener('wheel', e => {
+                e.preventDefault();
+                const zoomFactor = 1.1, oldScale = viewTransform.scale;
+                viewTransform.scale *= e.deltaY < 0 ? zoomFactor : 1/zoomFactor;
+                viewTransform.scale = Math.max(0.2, Math.min(viewTransform.scale, 5));
+                const mousePos = getMousePosition(e);
+                viewTransform.tx -= mousePos.x * (viewTransform.scale - oldScale); viewTransform.ty -= mousePos.y * (viewTransform.scale - oldScale);
+                updateViewTransform(); renderNetwork();
+            });
+
+            zoomInBtn.addEventListener('click', () => { viewTransform.scale = Math.min(5, viewTransform.scale * 1.2); updateViewTransform(); renderNetwork(); });
+            zoomOutBtn.addEventListener('click', () => { viewTransform.scale = Math.max(0.2, viewTransform.scale / 1.2); updateViewTransform(); renderNetwork(); });
+
+            const findConnectedGroup = (startId, network, connections) => {
+                if (!startId) return [];
+                const group = new Set(), queue = [startId], visited = new Set([startId]);
+                while (queue.length > 0) {
+                    const currentId = queue.shift(); group.add(currentId);
+                    connections.forEach(conn => {
+                        let neighborId = null;
+                        if(conn.compA === currentId) neighborId = conn.compB; else if(conn.compB === currentId) neighborId = conn.compA;
+                        if (neighborId && !visited.has(neighborId)) { visited.add(neighborId); queue.push(neighborId); }
+                    });
+                }
+                return Array.from(group).map(id => network.find(c => c.id === id));
+            };
+
+            const runSimulation = () => {
+                network.forEach(c => { c.calculatedFlow = 0; c.pressureDrop = 0; c.k_value = 0; });
+                totalPressureDropResult.textContent = '--- Pa'; totalFlowRateResult.textContent = '--- m³/h';
+                simulationValidationResult.innerHTML = '';
+                latestConnectionDrops = [];
+                
+                const fan = network.find(c => c.type === 'fan');
+                const grilles = network.filter(c => c.type === 'grille');
+                if (!fan) { showAlert('Erro de Simulação', 'É necessário adicionar um Ventilador à rede.'); return; }
+                if (grilles.length === 0) { showAlert('Erro de Simulação', 'É necessário adicionar pelo menos uma Grelha à rede.'); return; }
+                if (network.length > 0) {
+                    const reachableFromFan = findConnectedGroup(fan.id, network, connections);
+                    if (reachableFromFan.length < network.length) { showAlert('Erro de Simulação', 'Existem componentes na rede que não estão ligados ao ventilador.'); return; }
+                }
+
+                const adj = new Map();
+                network.forEach(c => adj.set(c.id, []));
+                connections.forEach(c => { adj.get(c.compA).push(c.compB); adj.get(c.compB).push(c.compA); });
+
+                grilles.forEach(grille => {
+                    const flow = grille.flowUser || 0;
+                    const queue = [[grille.id, null]]; const visited = new Set([grille.id]);
+                    grille.calculatedFlow += flow;
+                    while (queue.length > 0) {
+                        const [currentId, parentId] = queue.shift();
+                        const neighbors = adj.get(currentId) || [];
+                        for (const neighborId of neighbors) {
+                            if (neighborId !== parentId && !visited.has(neighborId)) {
+                                const neighborComp = network.find(c => c.id === neighborId);
+                                if (neighborComp) { visited.add(neighborId); neighborComp.calculatedFlow += flow; queue.push([neighborId, currentId]); }
+                            }
+                        }
+                    }
+                });
+                
+                totalFlowRateResult.textContent = `${(fan.calculatedFlow || 0).toFixed(2)} m³/h`;
+
+                let totalDrop = 0;
+                network.forEach(comp => {
+                    if (comp.calculatedFlow > 0) {
+                        const Q_m3s = comp.calculatedFlow / 3600; let drop = 0, k_value = 0;
+                        if(comp.type === 'grille') { drop = comp.pressureDropUser || 0; k_value = NaN; }
+                        else if (comp.type === 'reducer') {
+                            k_value = ZETA_VALUES.reducer || 0.15;
+                            const D1_m = (comp.width || 250) / 1000, D2_m = (comp.height || 250) / 1000;
+                            if (D1_m > 0 && D2_m > 0) {
+                                const A2_m2 = Math.PI * (D2_m / 2) ** 2, V2_ms = Q_m3s / A2_m2;
+                                drop = k_value * (RHO / 2) * (V2_ms ** 2);
+                            }
+                        } else {
+                            k_value = ZETA_VALUES[comp.type] || 0;
+                            if (comp.type !== 'fan') {
+                                const D_m = (comp.width || 250) / 1000;
+                                if (D_m > 0 && k_value > 0) { 
+                                    const A_m2 = Math.PI * (D_m/2)**2, V_ms = Q_m3s / A_m2, dynamicPressure = (RHO / 2) * (V_ms ** 2);
+                                    drop = k_value * dynamicPressure; 
+                                }
+                            }
+                        }
+                        comp.pressureDrop = drop; 
+                        comp.k_value = k_value;
+                        if (comp.type !== 'fan') totalDrop += drop;
+                    }
+                });
+                
+                connections.forEach((conn, index) => {
+                    const compA = network.find(c => c.id === conn.compA), compB = network.find(c => c.id === conn.compB);
+                    if (!compA || !compB) return;
+                    const flowComp = network.find(c => c.id === conn.compA && c.calculatedFlow > 0) || network.find(c => c.id === conn.compB && c.calculatedFlow > 0);
+                    if (!flowComp) return;
+                    const flow_m3h = flowComp.calculatedFlow;
+                    
+                    const length_m = conn.length_m || 0;
+                    if (length_m <= 0) return;
+
+                    let Deq_m, A_m2, dimensionString;
+                    if (conn.shape === 'rectangular') {
+                        const width_m = (conn.width_mm || 300) / 1000, height_m = (conn.height_mm || 200) / 1000;
+                        A_m2 = width_m * height_m;
+                        Deq_m = 1.30 * Math.pow(A_m2, 0.625) / Math.pow((width_m + height_m), 0.25);
+                        dimensionString = `${conn.width_mm}x${conn.height_mm}`;
+                    } else { // circular
+                        const D_m = (conn.diameter_mm || 250) / 1000;
+                        A_m2 = Math.PI * (D_m/2)**2;
+                        Deq_m = D_m;
+                        dimensionString = `Ø${conn.diameter_mm}`;
+                    }
+                    if(A_m2 <= 0) return;
+
+                    const Q_m3s = flow_m3h / 3600, V_ms = Q_m3s / A_m2;
+                    const Re = (V_ms * Deq_m) / NU, f = haaland(0.000045, Deq_m, Re);
+                    
+                    const pressureDrop_Pa_m = f * (RHO / 2) * (V_ms ** 2 / Deq_m);
+                    let noise = 0;
+                    if (V_ms > 0) noise = 10 + 50 * Math.log10(V_ms);
+                    if (noise < 20) noise = 20;
+
+                    const drop = pressureDrop_Pa_m * length_m;
+                    totalDrop += drop;
+
+                    latestConnectionDrops.push({ 
+                        id: conn.id, name: `Ligação ${index + 1}`, flow: flow_m3h, drop: drop, f_value: f, 
+                        length: length_m, dimension: dimensionString, velocity: V_ms, 
+                        pressureDrop_Pa_m: pressureDrop_Pa_m, noise: noise
+                    });
+                });
+
+                totalPressureDropResult.textContent = `${totalDrop.toFixed(2)} Pa`;
+                if (fan.pressure >= totalDrop) {
+                    simulationValidationResult.innerHTML = `<span class="text-green-500">✓ Sistema Cumpre</span>`;
+                } else {
+                    simulationValidationResult.innerHTML = `<span class="text-red-500">✗ Falha: Pressão Insuficiente</span>`;
+                }
+                
+                if (fan.pressure >= totalDrop) {
+                    analysisViewPanel.classList.remove('hidden');
+                    renderDataLabels();
+                    updateAnalysisView('normal'); 
+                } else {
+                    analysisViewPanel.classList.add('hidden');
+                    analysisLegend.classList.add('hidden');
+                    const labelsGroup = document.getElementById('labels-group');
+                    if (labelsGroup) labelsGroup.innerHTML = '';
+                }
+
+                showProperties(selectedComponentId ? 'component' : 'connection', selectedComponentId || selectedConnectionId);
+            };
+
+            const renderDataLabels = () => {
+                const labelsGroup = document.getElementById('labels-group');
+                if (!labelsGroup) return;
+                labelsGroup.innerHTML = ''; // Clear previous labels
+
+                latestConnectionDrops.forEach(connDrop => {
+                    const connection = connections.find(c => c.id === connDrop.id);
+                    if (!connection) return;
+
+                    const compA = network.find(c => c.id === connection.compA);
+                    const compB = network.find(c => c.id === connection.compB);
+                    if (!compA || !compB) return;
+
+                    const portsA = getConnectorWorldPositions(compA);
+                    const portsB = getConnectorWorldPositions(compB);
+                    const startPos = portsA[connection.portA];
+                    const endPos = portsB[connection.portB];
+                    if (!startPos || !endPos) return;
+                    
+                    const midX = (startPos.x + endPos.x) / 2;
+                    const midY = (startPos.y + endPos.y) / 2;
+                    const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x) * 180 / Math.PI;
+                    
+                    let displayAngle = angle;
+                    if (displayAngle > 90 || displayAngle < -90) {
+                        displayAngle += 180;
+                    }
+
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('x', midX);
+                    text.setAttribute('y', midY - 8); 
+                    text.setAttribute('transform', `rotate(${displayAngle}, ${midX}, ${midY})`);
+                    text.setAttribute('font-size', `${8 / viewTransform.scale}px`);
+                    text.setAttribute('fill', document.documentElement.classList.contains('dark') ? '#e5e7eb' : '#1f2937');
+                    text.setAttribute('text-anchor', 'middle');
+                    text.style.pointerEvents = 'none';
+                    
+                    text.innerHTML = `${connDrop.flow.toFixed(0)}m³/h | ${connDrop.velocity.toFixed(1)}m/s | ${connDrop.noise.toFixed(1)}dBA`;
+                    labelsGroup.appendChild(text);
+                });
+            };
+
+            const getColorForValue = (value, min, max) => {
+                if (value <= min) return 'rgb(16, 185, 129)'; // Green
+                if (value >= max) return 'rgb(239, 68, 68)'; // Red
+                const ratio = (value - min) / (max - min);
+                let r, g, b;
+                if (ratio < 0.5) { // Green -> Yellow
+                    const localRatio = ratio * 2;
+                    r = Math.round(16 + (245 - 16) * localRatio);
+                    g = Math.round(185 + (159 - 185) * localRatio);
+                    b = Math.round(129 + (11 - 129) * localRatio);
+                } else { // Yellow -> Red
+                    const localRatio = (ratio - 0.5) * 2;
+                    r = Math.round(245 + (239 - 245) * localRatio);
+                    g = Math.round(159 + (68 - 159) * localRatio);
+                    b = Math.round(11 + (68 - 11) * localRatio);
+                }
+                return `rgb(${r},${g},${b})`;
+            };
+
+            const updateAnalysisView = (mode) => {
+                const legendTitle = document.getElementById('legend-title');
+                const legendMin = document.getElementById('legend-min');
+                const legendMid = document.getElementById('legend-mid');
+                const legendMax = document.getElementById('legend-max');
+
+                const analysisModes = {
+                    velocity: { title: 'Velocidade (m/s)', min: 2.5, max: 7.5, prop: 'velocity' },
+                    pressure: { title: 'Perda Específica (Pa/m)', min: 0, max: 2.0, prop: 'pressureDrop_Pa_m' },
+                    noise: { title: 'Ruído (dBA)', min: 20, max: 50, prop: 'noise' }
+                };
+
+                if (mode === 'normal') {
+                    analysisLegend.classList.add('hidden');
+                } else {
+                    const config = analysisModes[mode];
+                    legendTitle.textContent = config.title;
+                    legendMin.textContent = config.min.toFixed(1);
+                    legendMid.textContent = ((config.min + config.max) / 2).toFixed(1);
+                    legendMax.textContent = config.max.toFixed(1);
+                    analysisLegend.classList.remove('hidden');
+                }
+
+                const ductElements = document.querySelectorAll('.connection-duct');
+                ductElements.forEach(ductEl => {
+                    const connId = parseFloat(ductEl.dataset.id);
+                    const connData = latestConnectionDrops.find(cd => cd.id === connId);
+                    if (!connData) return;
+
+                    let color = 'rgba(100,100,150,0.7)'; // Default color
+                    if (mode !== 'normal') {
+                        const config = analysisModes[mode];
+                        const value = connData[config.prop];
+                        color = getColorForValue(value, config.min, config.max);
+                    }
+                    ductEl.setAttribute('fill', color);
+                });
+                
+                document.querySelectorAll('.analysis-btn').forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.mode === mode);
+                });
+            };
+
+            analysisViewPanel.addEventListener('click', e => {
+                if (e.target.classList.contains('analysis-btn')) {
+                    const mode = e.target.dataset.mode;
+                    updateAnalysisView(mode);
+                }
+            });
+
+            simulateBtn.addEventListener('click', runSimulation);
+
+            clearNetworkBtn.addEventListener('click', async () => {
+                const confirmed = await showConfirm( 'Limpar Rede', 'Tem a certeza que deseja limpar a rede? Esta ação não pode ser desfeita.');
+                if (confirmed) {
+                    network = []; connections = []; selectedComponentId = null; selectedConnectionId = null;
+                    totalPressureDropResult.textContent = '--- Pa'; totalFlowRateResult.textContent = '--- m³/h';
+                    simulationValidationResult.innerHTML = '';
+                    analysisViewPanel.classList.add('hidden');
+                    analysisLegend.classList.add('hidden');
+                    viewTransform = { scale: 1, tx: 0, ty: 0 }; updateViewTransform();
+                    renderNetwork(); showProperties(null);
+                }
+            });
+
+            propertiesPanel.addEventListener('input', e => {
+                if (e.target.tagName === 'INPUT') {
+                    const prop = e.target.dataset.prop, value = parseFloat(e.target.value);
+                    if (!isNaN(value)) {
+                        if (selectedComponentId) {
+                            const compToUpdate = network.find(c => c.id === selectedComponentId);
+                            if (compToUpdate) compToUpdate[prop] = value;
+                        } else if (selectedConnectionId) {
+                            const connToUpdate = connections.find(c => c.id === selectedConnectionId);
+                            if (connToUpdate) connToUpdate[prop] = value;
+                        }
+                    }
+                }
+            });
+            
+            const showTableBtn = document.getElementById('show-table-btn'), resultsModal = document.getElementById('results-modal'), closeModalBtn = document.getElementById('close-modal-btn'), resultsTableBody = document.getElementById('results-table-body'), resultsTableFoot = document.getElementById('results-table-foot'), printTableBtn = document.getElementById('print-table-btn'), copyTableBtn = document.getElementById('copy-table-btn');
+            
+            const openModal = () => {
+                resultsTableBody.innerHTML = ''; resultsTableFoot.innerHTML = '';
+                const simulatedComponents = network.filter(c => c.hasOwnProperty('calculatedFlow') && c.calculatedFlow > 0);
+                if (simulatedComponents.length === 0 && latestConnectionDrops.length === 0) { 
+                    resultsTableBody.innerHTML = `<tr><td colspan="10" class="text-center p-4">Execute a simulação primeiro para ver os resultados.</td></tr>`;
+                } else {
+                    let totalDropInTable = 0;
+                    simulatedComponents.forEach(comp => {
+                        const typeName = comp.type.charAt(0).toUpperCase() + comp.type.slice(1);
+                        const row = document.createElement('tr');
+                        row.innerHTML = `<td class="p-3 border-t border-gray-300 dark:border-gray-600">${typeName}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(comp.calculatedFlow || 0).toFixed(2)}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${comp.width && comp.type !== 'grille' && comp.type !== 'fan' ? `Ø${comp.width}` : '---'}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${isNaN(comp.k_value) ? 'N/A' : (comp.k_value || 0).toFixed(2)}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(comp.pressureDrop || 0).toFixed(2)}</td>`;
+                        resultsTableBody.appendChild(row); 
+                        if (comp.type !== 'fan') totalDropInTable += (comp.pressureDrop || 0);
+                    });
+
+                    latestConnectionDrops.forEach(connDrop => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `<td class="p-3 border-t border-gray-300 dark:border-gray-600 italic">${connDrop.name}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${connDrop.flow.toFixed(2)}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.velocity || 0).toFixed(2)}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${connDrop.dimension}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.length || 0).toFixed(2)}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.pressureDrop_Pa_m || 0).toFixed(3)}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.noise || 0).toFixed(2)}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.f_value || 0).toExponential(2)}</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${connDrop.drop.toFixed(2)}</td>`;
+                        resultsTableBody.appendChild(row);
+                        totalDropInTable += connDrop.drop;
+                    });
+
+                    const totalRow = document.createElement('tr');
+                    totalRow.innerHTML = `<td class="p-3 text-right font-bold" colspan="9">Total Perda de Carga (Pa)</td><td class="p-3 font-bold">${totalDropInTable.toFixed(2)}</td>`;
+                    resultsTableFoot.appendChild(totalRow);
+                }
+                resultsModal.classList.remove('hidden'); resultsModal.classList.add('flex');
+            };
+            const closeModal = () => { resultsModal.classList.add('hidden'); resultsModal.classList.remove('flex'); };
+            showTableBtn.addEventListener('click', openModal);
+            closeModalBtn.addEventListener('click', closeModal);
+            resultsModal.addEventListener('click', (e) => { if (e.target === resultsModal) closeModal(); });
+
+            printTableBtn.addEventListener('click', () => {
+                const tableToPrint = resultsModal.querySelector('table').outerHTML;
+                const newWin = window.open('', 'Print-Window');
+                newWin.document.open();
+                newWin.document.write(`
+                    <html>
+                        <head>
+                            <title>Tabela de Resultados da Rede</title>
+                            <style>
+                                @media print { @page { size: A4 landscape; } }
+                                body { font-family: sans-serif; margin: 20px;}
+                                h1 { font-size: 1.5em; margin-bottom: 1em; }
+                                table { width: 100%; border-collapse: collapse; font-size: 0.8em; }
+                                th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+                                thead { background-color: #eee; }
+                                tfoot { font-weight: bold; background-color: #eee;}
+                            </style>
+                        </head>
+                        <body onload="window.print(); window.close();">
+                            <h1>Tabela de Resultados da Rede</h1>
+                            ${tableToPrint}
+                        </body>
+                    </html>
+                `);
+                newWin.document.close();
+            });
+
+            copyTableBtn.addEventListener('click', () => {
+                const table = resultsModal.querySelector('table');
+                let data = [];
+                const headers = [];
+                table.querySelectorAll('thead th').forEach(th => headers.push(th.innerText));
+                data.push(headers.join('\t'));
+
+                table.querySelectorAll('tbody tr').forEach(tr => {
+                    const row = [];
+                    tr.querySelectorAll('td').forEach(td => row.push(td.innerText));
+                    data.push(row.join('\t'));
+                });
+
+                table.querySelectorAll('tfoot tr').forEach(tr => {
+                    const totalRow = [];
+                    const cells = tr.querySelectorAll('td');
+                    const colspan = parseInt(cells[0].getAttribute('colspan')) || 1;
+                    for (let i = 0; i < colspan - 1; i++) {
+                        totalRow.push('');
+                    }
+                    totalRow.push(cells[0].innerText);
+                    totalRow.push(cells[1].innerText);
+                    data.push(totalRow.join('\t'));
+                });
+
+                const tsv = data.join('\n');
+                const textarea = document.createElement('textarea');
+                textarea.style.position = 'absolute';
+                textarea.style.left = '-9999px';
+                textarea.value = tsv;
+                document.body.appendChild(textarea);
+                textarea.select();
+                try {
+                    document.execCommand('copy');
+                    const originalText = copyTableBtn.innerText;
+                    copyTableBtn.innerText = 'Copiado!';
+                    setTimeout(() => {
+                        copyTableBtn.innerText = originalText;
+                    }, 2000);
+                } catch (err) {
+                    showAlert('Erro ao Copiar', 'Não foi possível copiar a tabela. Por favor, tente manualmente.');
+                }
+                document.body.removeChild(textarea);
+            });
+
+
+            const alertModal = document.getElementById('alert-modal'), alertTitle = document.getElementById('alert-title'), alertMessage = document.getElementById('alert-message'), closeAlertBtn = document.getElementById('close-alert-btn');
+            const showAlert = (title, message) => {
+                alertTitle.textContent = title; alertMessage.textContent = message;
+                alertModal.classList.remove('hidden'); alertModal.classList.add('flex');
+            };
+            const closeAlert = () => { alertModal.classList.add('hidden'); alertModal.classList.remove('flex'); };
+            closeAlertBtn.addEventListener('click', closeAlert);
+
+            const confirmModal = document.getElementById('confirm-modal');
+            const showConfirm = (title, message) => {
+                return new Promise((resolve) => {
+                    const confirmTitle = document.getElementById('confirm-title');
+                    const confirmMessage = document.getElementById('confirm-message');
+                    const confirmOkBtn = document.getElementById('confirm-ok-btn');
+                    const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+
+                    confirmTitle.textContent = title;
+                    confirmMessage.textContent = message;
+
+                    const closeConfirm = (result) => {
+                        confirmModal.classList.add('hidden');
+                        confirmModal.classList.remove('flex');
+                        resolve(result);
+                    };
+
+                    const onOk = () => closeConfirm(true);
+                    const onCancel = () => closeConfirm(false);
+
+                    confirmOkBtn.addEventListener('click', onOk, { once: true });
+                    confirmCancelBtn.addEventListener('click', onCancel, { once: true });
+
+                    confirmModal.classList.remove('hidden');
+                    confirmModal.classList.add('flex');
+                });
+            };
+
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Delete' || e.key === 'Backspace') {
+                    if(selectedComponentId || selectedConnectionId) deleteSelection();
+                }
+            });
+
+            const templatesMenuButton = document.getElementById('templates-menu-button');
+            const templatesDropdown = document.getElementById('templates-dropdown');
+            const templateItems = document.querySelectorAll('.template-item');
+
+            templatesMenuButton.addEventListener('click', () => {
+                templatesDropdown.classList.toggle('hidden');
+            });
+            document.addEventListener('click', (e) => {
+                if (!templatesMenuButton.contains(e.target) && !templatesDropdown.contains(e.target)) {
+                    templatesDropdown.classList.add('hidden');
+                }
+            });
+
+            templateItems.forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const templateId = e.target.dataset.template;
+                    loadTemplate(templateId);
+                    templatesDropdown.classList.add('hidden');
+                });
+            });
+
+            const loadTemplate = async (templateId) => {
+                 const confirmed = await showConfirm(
+                    'Carregar Template',
+                    'Esta ação irá limpar a rede atual. Deseja continuar?'
+                );
+
+                if (!confirmed) {
+                    return;
+                }
+                
+                network = []; connections = []; selectedComponentId = null; selectedConnectionId = null;
+                totalPressureDropResult.textContent = '--- Pa'; totalFlowRateResult.textContent = '--- m³/h';
+                simulationValidationResult.innerHTML = '';
+                viewTransform = { scale: 1, tx: 0, ty: 0 }; updateViewTransform();
+                
+                let nextId = Date.now();
+
+                if (templateId === '1') {
+                    const fan = { id: nextId++, type: 'fan', rotation: 0, x: 100, y: 200, pressure: 50 };
+                    const grille = { id: nextId++, type: 'grille', rotation: 270, x: 300, y: 200, flowUser: 500, pressureDropUser: 15 };
+                    network.push(fan, grille);
+                    connections.push({
+                        id: nextId++, compA: fan.id, portA: 1, compB: grille.id, portB: 0,
+                        shape: 'circular', diameter_mm: 250, width_mm: 300, height_mm: 200, length_m: 5
+                    });
+                } else if (templateId === '2') {
+                    const fan = { id: nextId++, type: 'fan', rotation: 0, x: 100, y: 200, pressure: 50 };
+                    const tee = { id: nextId++, type: 'tee', rotation: 0, x: 200, y: 200, width: 250 };
+                    const grille1 = { id: nextId++, type: 'grille', rotation: 270, x: 300, y: 200, flowUser: 500, pressureDropUser: 15 };
+                    const grille2 = { id: nextId++, type: 'grille', rotation: 0, x: 200, y: 300, flowUser: 500, pressureDropUser: 15 };
+                    network.push(fan, tee, grille1, grille2);
+                    
+                    connections.push({ id: nextId++, compA: fan.id, portA: 1, compB: tee.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
+                    connections.push({ id: nextId++, compA: tee.id, portA: 1, compB: grille1.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
+                    connections.push({ id: nextId++, compA: tee.id, portA: 2, compB: grille2.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
+                } else if (templateId === '3') {
+                    const fan = { id: nextId++, type: 'fan', rotation: 0, x: 100, y: 200, pressure: 50 };
+                    const curve = { id: nextId++, type: 'curve90', rotation: 90, x: 200, y: 200, width: 250 };
+                    const grille = { id: nextId++, type: 'grille', rotation: 0, x: 200, y: 300, flowUser: 500, pressureDropUser: 15 };
+                    network.push(fan, curve, grille);
+                    
+                    connections.push({ id: nextId++, compA: fan.id, portA: 1, compB: curve.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
+                    connections.push({ id: nextId++, compA: curve.id, portA: 1, compB: grille.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
+                }
+                
+                renderNetwork();
+                showProperties(null);
+            };
+
+        });
+    </script>
+</body>
+</html>
+
