@@ -512,9 +512,10 @@
                 tee:      { connectors: [{x:0,y:0.5},{x:1,y:0.5},{x:0.5,y:1}], draw: (w,h) => `<rect x="0" y="${h/2 - 4}" width="${w}" height="8" fill="rgba(100,100,150,0.7)"/><rect x="${w/2 - 4}" y="${h/2}" width="8" height="${h/2}" fill="rgba(100,100,150,0.7)"/>` },
                 reducer:  { connectors: [{x:0,y:0.5},{x:1,y:0.5}], draw: (w,h) => `<rect x="0" y="0" width="${w}" height="${h}" fill="rgba(59, 130, 246, 0.8)"/>` },
                 grille:   { connectors: [{x:0.5,y:0}], draw: (w,h) => `<rect x="0" y="0" width="${w}" height="${h}" fill="rgba(239, 68, 68, 0.8)"/>` },
-                fan:      { connectors: [{x:0,y:0.5},{x:1,y:0.5}], draw: (w,h) => `<rect x="0" y="0" width="${w}" height="${h}" fill="rgba(34, 197, 94, 0.8)"/>` }
+                fan:      { connectors: [{x:1,y:0.5}], draw: (w,h) => `<rect x="0" y="0" width="${w}" height="${h}" fill="rgba(34, 197, 94, 0.8)"/>` }
             };
             const ZETA_VALUES = { curve90: 0.9, tee: 1.8, reducer: 0.15 };
+            const translationMap = { fan: 'Ventilador', tee: 'Tê', grille: 'Grelha', curve90: 'Curva 90°', reducer: 'Redução' };
 
             const updateViewTransform = () => networkGroup.setAttribute('transform', `translate(${viewTransform.tx}, ${viewTransform.ty}) scale(${viewTransform.scale})`);
             
@@ -794,6 +795,7 @@
                 simulationValidationResult.innerHTML = '';
                 latestConnectionDrops = [];
                 let segmentCounter = 1;
+                network.forEach(c => c.segmentId = segmentCounter++);
                 
                 const fan = network.find(c => c.type === 'fan');
                 const grilles = network.filter(c => c.type === 'grille');
@@ -802,6 +804,26 @@
                 if (network.length > 0) {
                     const reachableFromFan = findConnectedGroup(fan.id, network, connections);
                     if (reachableFromFan.length < network.length) { showAlert('Erro de Simulação', 'Existem componentes na rede que não estão ligados ao ventilador.'); return; }
+                }
+                
+                const allConnectedPorts = new Set();
+                connections.forEach(conn => {
+                    allConnectedPorts.add(`${conn.compA}-${conn.portA}`);
+                    allConnectedPorts.add(`${conn.compB}-${conn.portB}`);
+                });
+
+                for (const comp of network) {
+                    const def = COMPONENT_DEFS[comp.type];
+                    if (def && def.connectors) {
+                        for (let i = 0; i < def.connectors.length; i++) {
+                            const portId = `${comp.id}-${i}`;
+                            if (!allConnectedPorts.has(portId)) {
+                                const typeName = translationMap[comp.type] || comp.type;
+                                showAlert('Erro de Rede', `O componente "${typeName}" [${comp.segmentId}] tem um conector aberto. Por favor, ligue todas as portas.`);
+                                return;
+                            }
+                        }
+                    }
                 }
 
                 // --- Flow Calculation ---
@@ -852,7 +874,6 @@
 
                 let totalDrop = 0;
                 network.forEach(comp => {
-                    comp.segmentId = segmentCounter++;
                     if (comp.calculatedFlow > 0) {
                         const Q_m3s = comp.calculatedFlow / 3600; let drop = 0, k_value = 0;
                         if(comp.type === 'grille') { drop = comp.pressureDropUser || 0; k_value = NaN; }
@@ -1355,17 +1376,17 @@
                     const grille = { id: nextId++, type: 'grille', rotation: 270, x: 300, y: 200, flowUser: 500, pressureDropUser: 15 };
                     network.push(fan, grille);
                     connections.push({
-                        id: nextId++, compA: fan.id, portA: 1, compB: grille.id, portB: 0,
+                        id: nextId++, compA: fan.id, portA: 0, compB: grille.id, portB: 0,
                         shape: 'circular', diameter_mm: 250, width_mm: 300, height_mm: 200, length_m: 5
                     });
                 } else if (templateId === '2') {
-                    const fan = { id: nextId++, type: 'fan', rotation: 0, x: 100, y: 200, pressure: 50 };
+                    const fan = { id: nextId++, type: 'fan', rotation: 0, x: 100, y: 200, pressure: 100 };
                     const tee = { id: nextId++, type: 'tee', rotation: 0, x: 200, y: 200, width: 250 };
                     const grille1 = { id: nextId++, type: 'grille', rotation: 270, x: 300, y: 200, flowUser: 500, pressureDropUser: 15 };
                     const grille2 = { id: nextId++, type: 'grille', rotation: 0, x: 200, y: 300, flowUser: 500, pressureDropUser: 15 };
                     network.push(fan, tee, grille1, grille2);
                     
-                    connections.push({ id: nextId++, compA: fan.id, portA: 1, compB: tee.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
+                    connections.push({ id: nextId++, compA: fan.id, portA: 0, compB: tee.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
                     connections.push({ id: nextId++, compA: tee.id, portA: 1, compB: grille1.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
                     connections.push({ id: nextId++, compA: tee.id, portA: 2, compB: grille2.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
                 } else if (templateId === '3') {
@@ -1374,7 +1395,7 @@
                     const grille = { id: nextId++, type: 'grille', rotation: 0, x: 200, y: 300, flowUser: 500, pressureDropUser: 15 };
                     network.push(fan, curve, grille);
                     
-                    connections.push({ id: nextId++, compA: fan.id, portA: 1, compB: curve.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
+                    connections.push({ id: nextId++, compA: fan.id, portA: 0, compB: curve.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
                     connections.push({ id: nextId++, compA: curve.id, portA: 1, compB: grille.id, portB: 0, shape: 'circular', diameter_mm: 250, length_m: 2 });
                 }
                 
@@ -1386,7 +1407,6 @@
     </script>
 </body>
 </html>
-
 
 
 
