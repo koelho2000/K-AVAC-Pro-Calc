@@ -51,6 +51,31 @@
             background-color: #1d4ed8; /* darker blue */
             box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
         }
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #drawing-area, #drawing-area * {
+                visibility: visible;
+            }
+            #drawing-area {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100vw;
+                height: 100vh;
+                border: none;
+                padding: 0;
+                margin: 0;
+            }
+            #drawing-canvas {
+                width: 100%;
+                height: 100%;
+            }
+            #analysis-legend {
+                visibility: visible !important;
+            }
+        }
     </style>
 </head>
 <body class="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-200 font-sans transition-colors duration-300">
@@ -251,11 +276,12 @@
                              </div>
                              <div id="analysis-view-panel" class="mt-4 p-4 bg-gray-200 dark:bg-gray-700 rounded-lg hidden">
                                 <h3 class="font-semibold mb-2 text-center text-gray-800 dark:text-gray-200">Vista de Análise</h3>
-                                <div class="flex justify-around gap-2">
-                                    <button data-mode="normal" class="analysis-btn flex-1 px-3 py-1 text-sm rounded-md bg-gray-500 text-white transition-colors">Normal</button>
-                                    <button data-mode="velocity" class="analysis-btn flex-1 px-3 py-1 text-sm rounded-md bg-blue-500 text-white transition-colors">Velocidade</button>
-                                    <button data-mode="pressure" class="analysis-btn flex-1 px-3 py-1 text-sm rounded-md bg-blue-500 text-white transition-colors">Perda de Carga</button>
-                                    <button data-mode="noise" class="analysis-btn flex-1 px-3 py-1 text-sm rounded-md bg-blue-500 text-white transition-colors">Ruído</button>
+                                <div class="flex justify-around gap-2 flex-wrap">
+                                    <button data-mode="normal" class="analysis-btn flex-grow px-3 py-1 text-sm rounded-md bg-gray-500 text-white transition-colors">Normal</button>
+                                    <button data-mode="velocity" class="analysis-btn flex-grow px-3 py-1 text-sm rounded-md bg-blue-500 text-white transition-colors">Velocidade</button>
+                                    <button data-mode="pressure" class="analysis-btn flex-grow px-3 py-1 text-sm rounded-md bg-blue-500 text-white transition-colors">Perda de Carga</button>
+                                    <button data-mode="noise" class="analysis-btn flex-grow px-3 py-1 text-sm rounded-md bg-blue-500 text-white transition-colors">Ruído</button>
+                                     <button id="print-analysis-btn" class="flex-grow px-3 py-1 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white transition-colors mt-2 sm:mt-0">Imprimir Desenho</button>
                                 </div>
                             </div>
                         </div>
@@ -285,7 +311,8 @@
                 <table class="w-full text-left table-auto">
                     <thead class="sticky top-0 bg-gray-200 dark:bg-gray-700">
                         <tr>
-                            <th class="p-3">Componente / Ligação</th>
+                            <th class="p-3">Segmento</th>
+                            <th class="p-3">Descrição</th>
                             <th class="p-3">Caudal (m³/h)</th>
                             <th class="p-3">Velocidade (m/s)</th>
                             <th class="p-3">Dimensão (mm)</th>
@@ -475,7 +502,7 @@
             // --- LÓGICA DO SIMULADOR DE REDE ---
             const componentItems = document.querySelectorAll('.component-item'), drawingArea = document.getElementById('drawing-area'), canvas = document.getElementById('drawing-canvas'), networkGroup = document.getElementById('network-group'), zoomInBtn = document.getElementById('zoom-in-btn'), zoomOutBtn = document.getElementById('zoom-out-btn'), simulateBtn = document.getElementById('simulate-btn'), clearNetworkBtn = document.getElementById('clear-network-btn'), propertiesPanel = document.getElementById('properties-panel'), propertiesContent = document.getElementById('properties-content'), totalPressureDropResult = document.getElementById('total-pressure-drop-result'), totalFlowRateResult = document.getElementById('total-flow-rate-result'), simulationValidationResult = document.getElementById('simulation-validation-result'), analysisViewPanel = document.getElementById('analysis-view-panel'), analysisLegend = document.getElementById('analysis-legend');
             
-            let network = [], connections = [], selectedComponentId = null, selectedConnectionId = null, latestConnectionDrops = [];
+            let network = [], connections = [], selectedComponentId = null, selectedConnectionId = null, latestConnectionDrops = [], simulationResults = {};
             let dragInfo = { element: null, group: [], offset: { x: 0, y: 0 } }, viewTransform = { scale: 1, tx: 0, ty: 0 }, isPanning = false, panStart = { x: 0, y: 0 };
             const svgPoint = canvas.createSVGPoint();
             const getMousePosition = (evt) => { svgPoint.x = evt.clientX; svgPoint.y = evt.clientY; return svgPoint.matrixTransform(networkGroup.getScreenCTM().inverse()); };
@@ -579,7 +606,7 @@
                         else if(component.type==='grille'){contentHTML+=addProp('Caudal','flowUser','m³/h',component.flowUser); contentHTML+=addProp('Perda de Carga','pressureDropUser','Pa',component.pressureDropUser);}
                         else{contentHTML+=addProp('Dimensão','width','mm',component.width);}
                         
-                        if (component.hasOwnProperty('calculatedFlow')) {
+                        if (component.hasOwnProperty('calculatedFlow') && component.type !== 'grille') {
                             contentHTML += `<hr class="my-4 border-gray-600">`;
                             contentHTML += `<h4 class="font-semibold text-md mb-2 text-gray-300">Resultados da Simulação</h4>`;
                             contentHTML += addResult('Caudal Calculado', (component.calculatedFlow || 0).toFixed(2), 'm³/h');
@@ -766,6 +793,7 @@
                 totalPressureDropResult.textContent = '--- Pa'; totalFlowRateResult.textContent = '--- m³/h';
                 simulationValidationResult.innerHTML = '';
                 latestConnectionDrops = [];
+                let segmentCounter = 1;
                 
                 const fan = network.find(c => c.type === 'fan');
                 const grilles = network.filter(c => c.type === 'grille');
@@ -776,30 +804,55 @@
                     if (reachableFromFan.length < network.length) { showAlert('Erro de Simulação', 'Existem componentes na rede que não estão ligados ao ventilador.'); return; }
                 }
 
+                // --- Flow Calculation ---
                 const adj = new Map();
                 network.forEach(c => adj.set(c.id, []));
                 connections.forEach(c => { adj.get(c.compA).push(c.compB); adj.get(c.compB).push(c.compA); });
 
-                grilles.forEach(grille => {
-                    const flow = grille.flowUser || 0;
-                    const queue = [[grille.id, null]]; const visited = new Set([grille.id]);
-                    grille.calculatedFlow += flow;
-                    while (queue.length > 0) {
-                        const [currentId, parentId] = queue.shift();
-                        const neighbors = adj.get(currentId) || [];
-                        for (const neighborId of neighbors) {
-                            if (neighborId !== parentId && !visited.has(neighborId)) {
-                                const neighborComp = network.find(c => c.id === neighborId);
-                                if (neighborComp) { visited.add(neighborId); neighborComp.calculatedFlow += flow; queue.push([neighborId, currentId]); }
-                            }
+                const parentMap = new Map();
+                let q = [fan.id];
+                let visited = new Set([fan.id]);
+                parentMap.set(fan.id, null);
+                while(q.length > 0){
+                    const u = q.shift();
+                    for(const v of (adj.get(u) || [])){
+                        if(!visited.has(v)){
+                            visited.add(v);
+                            parentMap.set(v, u);
+                            q.push(v);
                         }
                     }
-                });
+                }
+
+                const childrenMap = new Map();
+                network.forEach(c => childrenMap.set(c.id, []));
+                for(const [childId, parentId] of parentMap.entries()){
+                    if(parentId !== null){
+                        childrenMap.get(parentId).push(childId);
+                    }
+                }
+
+                const flowMemo = new Map();
+                const getFlow = (nodeId) => {
+                    if (flowMemo.has(nodeId)) return flowMemo.get(nodeId);
+                    const node = network.find(c => c.id === nodeId);
+                    if (!node) return 0;
+                    let totalFlow = (node.type === 'grille') ? (node.flowUser || 0) : 0;
+                    const children = childrenMap.get(nodeId) || [];
+                    for (const childId of children) {
+                        totalFlow += getFlow(childId);
+                    }
+                    node.calculatedFlow = totalFlow;
+                    flowMemo.set(nodeId, totalFlow);
+                    return totalFlow;
+                };
+                getFlow(fan.id);
                 
                 totalFlowRateResult.textContent = `${(fan.calculatedFlow || 0).toFixed(2)} m³/h`;
 
                 let totalDrop = 0;
                 network.forEach(comp => {
+                    comp.segmentId = segmentCounter++;
                     if (comp.calculatedFlow > 0) {
                         const Q_m3s = comp.calculatedFlow / 3600; let drop = 0, k_value = 0;
                         if(comp.type === 'grille') { drop = comp.pressureDropUser || 0; k_value = NaN; }
@@ -826,12 +879,15 @@
                     }
                 });
                 
-                connections.forEach((conn, index) => {
+                connections.forEach((conn) => {
                     const compA = network.find(c => c.id === conn.compA), compB = network.find(c => c.id === conn.compB);
                     if (!compA || !compB) return;
-                    const flowComp = network.find(c => c.id === conn.compA && c.calculatedFlow > 0) || network.find(c => c.id === conn.compB && c.calculatedFlow > 0);
-                    if (!flowComp) return;
-                    const flow_m3h = flowComp.calculatedFlow;
+                    
+                    const downstreamComp = parentMap.get(compA.id) === compB.id ? compA : (parentMap.get(compB.id) === compA.id ? compB : null);
+                    if (!downstreamComp) return;
+                    
+                    const flow_m3h = downstreamComp.calculatedFlow;
+                    if (flow_m3h <= 0) return;
                     
                     const length_m = conn.length_m || 0;
                     if (length_m <= 0) return;
@@ -862,12 +918,13 @@
                     totalDrop += drop;
 
                     latestConnectionDrops.push({ 
-                        id: conn.id, name: `Ligação ${index + 1}`, flow: flow_m3h, drop: drop, f_value: f, 
+                        id: conn.id, name: `Conduta`, segmentId: segmentCounter++, flow: flow_m3h, drop: drop, f_value: f, 
                         length: length_m, dimension: dimensionString, velocity: V_ms, 
                         pressureDrop_Pa_m: pressureDrop_Pa_m, noise: noise
                     });
                 });
 
+                simulationResults.totalDrop = totalDrop;
                 totalPressureDropResult.textContent = `${totalDrop.toFixed(2)} Pa`;
                 if (fan.pressure >= totalDrop) {
                     simulationValidationResult.innerHTML = `<span class="text-green-500">✓ Sistema Cumpre</span>`;
@@ -892,42 +949,78 @@
             const renderDataLabels = () => {
                 const labelsGroup = document.getElementById('labels-group');
                 if (!labelsGroup) return;
-                labelsGroup.innerHTML = ''; // Clear previous labels
+                labelsGroup.innerHTML = '';
 
                 latestConnectionDrops.forEach(connDrop => {
                     const connection = connections.find(c => c.id === connDrop.id);
                     if (!connection) return;
-
-                    const compA = network.find(c => c.id === connection.compA);
-                    const compB = network.find(c => c.id === connection.compB);
+                    const compA = network.find(c => c.id === connection.compA), compB = network.find(c => c.id === connection.compB);
                     if (!compA || !compB) return;
-
-                    const portsA = getConnectorWorldPositions(compA);
-                    const portsB = getConnectorWorldPositions(compB);
-                    const startPos = portsA[connection.portA];
-                    const endPos = portsB[connection.portB];
+                    const portsA = getConnectorWorldPositions(compA), portsB = getConnectorWorldPositions(compB);
+                    const startPos = portsA[connection.portA], endPos = portsB[connection.portB];
                     if (!startPos || !endPos) return;
                     
-                    const midX = (startPos.x + endPos.x) / 2;
-                    const midY = (startPos.y + endPos.y) / 2;
+                    const midX = (startPos.x + endPos.x) / 2, midY = (startPos.y + endPos.y) / 2;
                     const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x) * 180 / Math.PI;
-                    
                     let displayAngle = angle;
-                    if (displayAngle > 90 || displayAngle < -90) {
-                        displayAngle += 180;
-                    }
+                    if (displayAngle > 90 || displayAngle < -90) { displayAngle += 180; }
 
                     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                     text.setAttribute('x', midX);
-                    text.setAttribute('y', midY - 8); 
+                    text.setAttribute('y', midY - 12);
                     text.setAttribute('transform', `rotate(${displayAngle}, ${midX}, ${midY})`);
                     text.setAttribute('font-size', `${8 / viewTransform.scale}px`);
                     text.setAttribute('fill', document.documentElement.classList.contains('dark') ? '#e5e7eb' : '#1f2937');
                     text.setAttribute('text-anchor', 'middle');
                     text.style.pointerEvents = 'none';
+
+                    const tspan1 = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+                    tspan1.setAttribute('x', midX); tspan1.setAttribute('dy', '0');
+                    tspan1.textContent = `[${connDrop.segmentId}] ${connDrop.flow.toFixed(0)}m³/h | ${connDrop.velocity.toFixed(1)}m/s | ${connDrop.noise.toFixed(1)}dBA`;
                     
-                    text.innerHTML = `${connDrop.flow.toFixed(0)}m³/h | ${connDrop.velocity.toFixed(1)}m/s | ${connDrop.noise.toFixed(1)}dBA`;
+                    const tspan2 = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+                    tspan2.setAttribute('x', midX); tspan2.setAttribute('dy', `${10 / viewTransform.scale}px`);
+                    tspan2.textContent = `${connDrop.dimension} | ${connDrop.drop.toFixed(2)} Pa`;
+                    
+                    text.appendChild(tspan1);
+                    text.appendChild(tspan2);
                     labelsGroup.appendChild(text);
+                });
+
+                network.forEach(comp => {
+                    if (!comp.segmentId) return;
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('font-size', `${8 / viewTransform.scale}px`);
+                    text.setAttribute('fill', document.documentElement.classList.contains('dark') ? '#e5e7eb' : '#1f2937');
+                    text.setAttribute('text-anchor', 'middle');
+                    text.style.pointerEvents = 'none';
+                    
+                    if (comp.type === 'grille') {
+                        text.setAttribute('x', comp.x + GRID_SIZE / 2);
+                        text.setAttribute('y', comp.y - 10);
+                        text.textContent = `[${comp.segmentId}] ${comp.flowUser.toFixed(0)}m³/h | ${comp.pressureDropUser.toFixed(1)}Pa`;
+                        labelsGroup.appendChild(text);
+                    } else if (comp.type === 'fan' && comp.hasOwnProperty('calculatedFlow')) {
+                        const x = comp.x + GRID_SIZE / 2, y = comp.y + GRID_SIZE + 10;
+                        text.setAttribute('x', x); text.setAttribute('y', y);
+                        
+                        const tspan1 = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+                        tspan1.setAttribute('x', x); tspan1.setAttribute('dy', '0');
+                        tspan1.textContent = `[${comp.segmentId}] Caudal: ${comp.calculatedFlow.toFixed(0)} m³/h`;
+
+                        const tspan2 = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+                        tspan2.setAttribute('x', x); tspan2.setAttribute('dy', `${10 / viewTransform.scale}px`);
+                        tspan2.textContent = `ΔP Inst.: ${(simulationResults.totalDrop || 0).toFixed(2)} Pa`;
+
+                        const tspan3 = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+                        tspan3.setAttribute('x', x); tspan3.setAttribute('dy', `${10 / viewTransform.scale}px`);
+                        tspan3.textContent = `P Disp.: ${comp.pressure.toFixed(2)} Pa`;
+
+                        text.appendChild(tspan1);
+                        text.appendChild(tspan2);
+                        text.appendChild(tspan3);
+                        labelsGroup.appendChild(text);
+                    }
                 });
             };
 
@@ -994,11 +1087,17 @@
             };
 
             analysisViewPanel.addEventListener('click', e => {
-                if (e.target.classList.contains('analysis-btn')) {
-                    const mode = e.target.dataset.mode;
+                const button = e.target.closest('button.analysis-btn[data-mode]');
+                if (button) {
+                    const mode = button.dataset.mode;
                     updateAnalysisView(mode);
                 }
             });
+            
+            document.getElementById('print-analysis-btn').addEventListener('click', () => {
+                window.print();
+            });
+
 
             simulateBtn.addEventListener('click', runSimulation);
 
@@ -1033,47 +1132,61 @@
             const showTableBtn = document.getElementById('show-table-btn'), resultsModal = document.getElementById('results-modal'), closeModalBtn = document.getElementById('close-modal-btn'), resultsTableBody = document.getElementById('results-table-body'), resultsTableFoot = document.getElementById('results-table-foot'), printTableBtn = document.getElementById('print-table-btn'), copyTableBtn = document.getElementById('copy-table-btn');
             
             const openModal = () => {
+                const translationMap = {
+                    fan: 'Ventilador', tee: 'Tê', grille: 'Grelha',
+                    curve90: 'Curva 90°', reducer: 'Redução'
+                };
                 resultsTableBody.innerHTML = ''; resultsTableFoot.innerHTML = '';
-                const simulatedComponents = network.filter(c => c.hasOwnProperty('calculatedFlow') && c.calculatedFlow > 0);
-                if (simulatedComponents.length === 0 && latestConnectionDrops.length === 0) { 
-                    resultsTableBody.innerHTML = `<tr><td colspan="10" class="text-center p-4">Execute a simulação primeiro para ver os resultados.</td></tr>`;
+                const simulatedComponents = network.filter(c => c.hasOwnProperty('calculatedFlow') && c.calculatedFlow > 0).sort((a,b) => a.segmentId - b.segmentId);
+                const simulatedConnections = [...latestConnectionDrops].sort((a,b) => a.segmentId - b.segmentId);
+
+                if (simulatedComponents.length === 0 && simulatedConnections.length === 0) { 
+                    resultsTableBody.innerHTML = `<tr><td colspan="11" class="text-center p-4">Execute a simulação primeiro para ver os resultados.</td></tr>`;
                 } else {
                     let totalDropInTable = 0;
-                    simulatedComponents.forEach(comp => {
-                        const typeName = comp.type.charAt(0).toUpperCase() + comp.type.slice(1);
-                        const row = document.createElement('tr');
-                        row.innerHTML = `<td class="p-3 border-t border-gray-300 dark:border-gray-600">${typeName}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(comp.calculatedFlow || 0).toFixed(2)}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${comp.width && comp.type !== 'grille' && comp.type !== 'fan' ? `Ø${comp.width}` : '---'}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${isNaN(comp.k_value) ? 'N/A' : (comp.k_value || 0).toFixed(2)}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(comp.pressureDrop || 0).toFixed(2)}</td>`;
-                        resultsTableBody.appendChild(row); 
-                        if (comp.type !== 'fan') totalDropInTable += (comp.pressureDrop || 0);
-                    });
+                    
+                    const allSegments = [
+                        ...simulatedComponents.map(comp => ({ type: 'component', data: comp })),
+                        ...simulatedConnections.map(conn => ({ type: 'connection', data: conn }))
+                    ].sort((a,b) => a.data.segmentId - b.data.segmentId);
 
-                    latestConnectionDrops.forEach(connDrop => {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `<td class="p-3 border-t border-gray-300 dark:border-gray-600 italic">${connDrop.name}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${connDrop.flow.toFixed(2)}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.velocity || 0).toFixed(2)}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${connDrop.dimension}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.length || 0).toFixed(2)}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.pressureDrop_Pa_m || 0).toFixed(3)}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.noise || 0).toFixed(2)}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.f_value || 0).toExponential(2)}</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
-                                         <td class="p-3 border-t border-gray-300 dark:border-gray-600">${connDrop.drop.toFixed(2)}</td>`;
-                        resultsTableBody.appendChild(row);
-                        totalDropInTable += connDrop.drop;
+                    allSegments.forEach(segment => {
+                         const row = document.createElement('tr');
+                        if (segment.type === 'component') {
+                            const comp = segment.data;
+                            const typeName = translationMap[comp.type] || (comp.type.charAt(0).toUpperCase() + comp.type.slice(1));
+                            row.innerHTML = `<td class="p-3 border-t border-gray-300 dark:border-gray-600 font-bold">[${comp.segmentId}]</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${typeName}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(comp.calculatedFlow || 0).toFixed(2)}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${comp.width && comp.type !== 'grille' && comp.type !== 'fan' ? `Ø${comp.width}` : '---'}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${isNaN(comp.k_value) ? 'N/A' : (comp.k_value || 0).toFixed(2)}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(comp.pressureDrop || 0).toFixed(2)}</td>`;
+                             if (comp.type !== 'fan') totalDropInTable += (comp.pressureDrop || 0);
+                        } else { // connection
+                            const connDrop = segment.data;
+                            row.innerHTML = `<td class="p-3 border-t border-gray-300 dark:border-gray-600 font-bold">[${connDrop.segmentId}]</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600 italic">${connDrop.name}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${connDrop.flow.toFixed(2)}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.velocity || 0).toFixed(2)}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${connDrop.dimension}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.length || 0).toFixed(2)}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.pressureDrop_Pa_m || 0).toFixed(3)}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.noise || 0).toFixed(2)}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${(connDrop.f_value || 0).toExponential(2)}</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">---</td>
+                                             <td class="p-3 border-t border-gray-300 dark:border-gray-600">${connDrop.drop.toFixed(2)}</td>`;
+                            totalDropInTable += connDrop.drop;
+                        }
+                        resultsTableBody.appendChild(row); 
                     });
 
                     const totalRow = document.createElement('tr');
-                    totalRow.innerHTML = `<td class="p-3 text-right font-bold" colspan="9">Total Perda de Carga (Pa)</td><td class="p-3 font-bold">${totalDropInTable.toFixed(2)}</td>`;
+                    totalRow.innerHTML = `<td class="p-3 text-right font-bold" colspan="10">Total Perda de Carga (Pa)</td><td class="p-3 font-bold">${totalDropInTable.toFixed(2)}</td>`;
                     resultsTableFoot.appendChild(totalRow);
                 }
                 resultsModal.classList.remove('hidden'); resultsModal.classList.add('flex');
@@ -1273,4 +1386,8 @@
     </script>
 </body>
 </html>
+
+
+
+
 
